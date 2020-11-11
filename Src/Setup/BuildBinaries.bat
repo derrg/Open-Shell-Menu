@@ -1,12 +1,10 @@
 if exist Output rd /Q /S Output
 md Output
 md Output\x64
-md Output\PDB32
-md Output\PDB64
 
 echo -- Compiling
 
-for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -property installationPath`) do set MSBuildDir=%%i\MSBuild\15.0\Bin\
+for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -property installationPath`) do set MSBuildDir=%%i\MSBuild\Current\Bin\
 
 REM ********* Build 64-bit solution
 echo --- 64bit
@@ -40,6 +38,7 @@ copy /B ..\ClassicIE\Setup\ClassicIE_32.exe Output > nul
 copy /B ..\StartMenu\Setup\StartMenu.exe Output > nul
 copy /B ..\StartMenu\Setup\StartMenuDLL.dll Output > nul
 copy /B ..\Update\Release\Update.exe Output > nul
+copy /B ..\Update\DesktopToasts\Release\DesktopToasts.dll Output > nul
 copy /B ..\StartMenu\StartMenuHelper\Setup\StartMenuHelper32.dll Output > nul
 copy /B ..\Setup\SetupHelper\Release\SetupHelper.exe Output > nul
 
@@ -67,6 +66,8 @@ copy /B "..\StartMenu\Skins\Metallic.skin7" Output > nul
 
 
 REM ********* Collect debug info
+md Output\PDB32
+md Output\PDB64
 
 REM Explorer 32
 copy /B ..\ClassicExplorer\Setup\ClassicExplorer32.pdb Output\PDB32 > nul
@@ -99,6 +100,8 @@ copy /B ..\StartMenu\StartMenuHelper\Setup\StartMenuHelper32.pdb Output\PDB32 > 
 copy /B Output\StartMenuHelper32.dll Output\PDB32 > nul
 copy /B ..\Update\Release\Update.pdb Output\PDB32 > nul
 copy /B Output\Update.exe Output\PDB32 > nul
+copy /B ..\Update\DesktopToasts\Release\DesktopToasts.pdb Output\PDB32 > nul
+copy /B Output\DesktopToasts.dll Output\PDB32 > nul
 
 REM Menu 64
 copy /B ..\StartMenu\Setup64\StartMenu.pdb Output\PDB64 > nul
@@ -125,6 +128,18 @@ if exist %PDBSTR_PATH% (
 		%PDBSTR_PATH% -w -p:%%f -s:srcsrv -i:Output\pdbstr.txt
 	)
 )
+
+REM ********* Prepare symbols
+
+set SYMSTORE_PATH="C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\symstore.exe"
+
+%SYMSTORE_PATH% add /r /f Output\PDB32 /s Output\symbols /t OpenShell -:NOREFS > nul
+%SYMSTORE_PATH% add /r /f Output\PDB64 /s Output\symbols /t OpenShell -:NOREFS > nul
+rd /Q /S Output\symbols\000Admin > nul
+del Output\symbols\pingme.txt > nul
+
+rd /Q /S Output\PDB32
+rd /Q /S Output\PDB64
 
 REM ********* Build ADMX
 echo --- ADMX

@@ -83,6 +83,7 @@ static StdMenuOption g_StdOptions[]=
 	{MENU_USERPICTURES,MENU_ENABLED}, // check policy
 	{MENU_SLEEP,MENU_ENABLED}, // check power caps
 	{MENU_HIBERNATE,MENU_ENABLED}, // check power caps
+	{MENU_LOCK,MENU_ENABLED}, // check power settings
 	{MENU_SWITCHUSER,MENU_ENABLED}, // check group policy
 	{MENU_APPS,MENU_ENABLED}, // enable on Win8+
 	{MENU_PCSETTINGS,MENU_ENABLED}, // enable on Win8+
@@ -1936,15 +1937,6 @@ void CMenuContainer::GetRecentPrograms( std::vector<MenuItem> &items, int maxCou
 					continue;
 				}
 
-				{
-					CComPtr<IShellItem> pAppItem;
-					if (FAILED(SHCreateItemInKnownFolder(FOLDERID_AppsFolder2,0,uaItem.name,IID_IShellItem,(void**)&pAppItem)))
-						continue;
-					CComString pName;
-					if (FAILED(pAppItem->GetDisplayName(SIGDN_NORMALDISPLAY,&pName)) || wcsncmp(pName,L"@{",2)==0)
-						continue;
-				}
-
 				uaItem.pLinkInfo=g_ItemManager.GetMetroAppInfo10(uaItem.name);
 				if (!uaItem.pLinkInfo)
 				{
@@ -1955,6 +1947,11 @@ void CMenuContainer::GetRecentPrograms( std::vector<MenuItem> &items, int maxCou
 				LOG_MENU(LOG_MFU,L"UserAssist: '%s', %d, %.3f",uaItem.name,data.count,uaItem.rank);
 				{
 					CItemManager::RWLock lock(&g_ItemManager,false,CItemManager::RWLOCK_ITEMS);
+					if (uaItem.pLinkInfo->GetMetroName().IsEmpty() || wcsncmp(uaItem.pLinkInfo->GetMetroName(), L"@{",2)==0)
+					{
+						LOG_MENU(LOG_MFU, L"UserAssist: Dropping: No metro name");
+						continue;
+					}
 					if (uaItem.pLinkInfo->IsNoPin())
 					{
 						LOG_MENU(LOG_MFU,L"UserAssist: Dropping: No pin");
@@ -2206,10 +2203,7 @@ void CMenuContainer::AddJumpListItems( std::vector<MenuItem> &items )
 				if (pLink)
 				{
 					pLink->GetIDList(&item.pItem1);
-					wchar_t location[_MAX_PATH];
-					int index;
-					if (pLink->GetIconLocation(location,_countof(location),&index)==S_OK && location[0])
-						item.pItemInfo=g_ItemManager.GetCustomIcon(location,index,CItemManager::ICON_SIZE_TYPE_SMALL,(index==0)); // assuming that if index!=0 the icon comes from a permanent location like a dll or exe
+					item.pItemInfo = g_ItemManager.GetLinkIcon(pLink, CItemManager::ICON_SIZE_TYPE_SMALL);
 				}
 			}
 			else if (jumpItem.type==CJumpItem::TYPE_ITEM)
@@ -2655,17 +2649,11 @@ int CMenuContainer::AddSearchItems( const std::vector<SearchItem> &items, const 
 				if (!categoryName.IsEmpty())
 				{
 					MenuItem item(MENU_SEARCH_CATEGORY);
-					if (categoryHash==CSearchManager::CATEGORY_PROGRAM || categoryHash==CSearchManager::CATEGORY_SETTING)
-					{
-						item.name.Format(L"%s (%d)",categoryName,originalCount);
-					}
-					else
-					{
-						item.name=categoryName;
-						item.bSplit=(s_Skin.More_bitmap_Size.cx>0);
-					}
+					item.name.Format(L"%s (%d)",categoryName,originalCount);
 					item.nameHash=CalcFNVHash(categoryName);
 					item.categoryHash=categoryHash;
+					if (categoryHash!=CSearchManager::CATEGORY_PROGRAM || categoryHash!=CSearchManager::CATEGORY_SETTING)
+						item.bSplit=(s_Skin.More_bitmap_Size.cx>0);
 					m_Items.push_back(item);
 				}
 			}
@@ -2723,7 +2711,7 @@ bool CMenuContainer::InitSearchItems( void )
 	unsigned int runCategoryHash=0;
 	CString runCommand;
 	CComString runExe;
-	if (!bAutoComlpete && !s_bNoRun && s_SearchResults.programs.empty() && s_SearchResults.settings.empty())
+	if (!bAutoComlpete && !s_bNoRun && s_SearchResults.programs.empty() && s_SearchResults.settings.empty() && s_SearchResults.metrosettings.empty())
 	{
 		if (s_bWin7Style)
 			m_SearchBox.GetWindowText(runCommand);
@@ -2780,6 +2768,12 @@ bool CMenuContainer::InitSearchItems( void )
 			if (m_SearchCategoryHash==CSearchManager::CATEGORY_PROGRAM)
 				selectedCount=(int)s_SearchResults.programs.size();
 		}
+		if (!s_SearchResults.metrosettings.empty())
+		{
+			counts.push_back((int)s_SearchResults.metrosettings.size());
+			if (m_SearchCategoryHash==CSearchManager::CATEGORY_METROSETTING)
+				selectedCount=(int)s_SearchResults.metrosettings.size();
+		}
 		if (!s_SearchResults.settings.empty())
 		{
 			counts.push_back((int)s_SearchResults.settings.size());
@@ -2828,13 +2822,15 @@ bool CMenuContainer::InitSearchItems( void )
 
 	// add categories
 	std::list<CSearchManager::SearchCategory>::const_iterator it=s_SearchResults.indexed.begin();
-	for (size_t idx=0;idx<s_SearchResults.indexed.size()+2;idx++)
+	for (size_t idx=0;idx<s_SearchResults.indexed.size()+3;idx++)
 	{
 		items.clear();
 		unsigned int categoryHash;
 		if (idx==0)
 			categoryHash=CSearchManager::CATEGORY_PROGRAM;
 		else if (idx==1)
+			categoryHash=CSearchManager::CATEGORY_METROSETTING;
+		else if (idx==2)
 			categoryHash=CSearchManager::CATEGORY_SETTING;
 		else
 			categoryHash=it->categoryHash;
@@ -2853,7 +2849,7 @@ bool CMenuContainer::InitSearchItems( void )
 		}
 		if (count<=0)
 		{
-			if (idx>=2) ++it;
+			if (idx>=3) ++it;
 			continue;
 		}
 
@@ -2871,13 +2867,23 @@ bool CMenuContainer::InitSearchItems( void )
 		}
 		else if (idx==1)
 		{
+			originalCount=(int)s_SearchResults.metrosettings.size();
+			if (count>originalCount)
+				count=originalCount;
+			items.reserve(count);
+			for (std::vector<const CItemManager::ItemInfo*>::const_iterator it=s_SearchResults.metrosettings.begin();it!=s_SearchResults.metrosettings.end() && (int)items.size()<count;++it)
+				items.push_back(SearchItem(*it));
+			name=FindTranslation(L"Search.CategoryPCSettings", L"Settings");
+		}
+		else if (idx==2)
+		{
 			originalCount=(int)s_SearchResults.settings.size();
 			if (count>originalCount)
 				count=originalCount;
 			items.reserve(count);
 			for (std::vector<const CItemManager::ItemInfo*>::const_iterator it=s_SearchResults.settings.begin();it!=s_SearchResults.settings.end() && (int)items.size()<count;++it)
 				items.push_back(SearchItem(*it));
-			name=FindTranslation(L"Search.CategorySettings",L"Settings");
+			name=FindTranslation(L"Search.CategorySettings",L"Control Panel");
 		}
 		else
 		{
@@ -6364,11 +6370,6 @@ LRESULT CMenuContainer::OnRefresh( UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL
 	return 0;
 }
 
-void CMenuContainer::HideTemp( bool bHide )
-{
-	::PostMessage(g_OwnerWindow,WM_CLEAR,bHide,0);
-}
-
 LRESULT CMenuContainer::OnActivate( UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled )
 {
 	if (LOWORD(wParam)!=WA_INACTIVE)
@@ -6378,6 +6379,9 @@ LRESULT CMenuContainer::OnActivate( UINT uMsg, WPARAM wParam, LPARAM lParam, BOO
 		return 0;
 	}
 #ifndef PREVENT_CLOSING
+	if (s_bPreventClosing)
+		return 0;
+
 	if (lParam)
 	{
 		// check if another menu window is being activated
@@ -6388,24 +6392,15 @@ LRESULT CMenuContainer::OnActivate( UINT uMsg, WPARAM wParam, LPARAM lParam, BOO
 
 		if ((HWND)lParam==g_OwnerWindow || (HWND)lParam==g_TopWin7Menu)
 			return 0;
-
-		if (s_bPreventClosing && (::GetWindowLong((HWND)lParam,GWL_EXSTYLE)&WS_EX_TOPMOST))
-			return 0;
 	}
 
-	// a non-top-most window tries to activate while we are still here
-	if (s_bPreventClosing && (!g_TopWin7Menu || !s_bAllPrograms))
-		HideTemp(true);
-	else
-	{
-		for (std::vector<CMenuContainer*>::reverse_iterator it=s_Menus.rbegin();it!=s_Menus.rend();++it)
-			if ((*it)->m_hWnd && !(*it)->m_bDestroyed)
-			{
-				(*it)->PostMessage(WM_CLOSE);
-				(*it)->m_bClosing=true;
-			}
-		if (g_TopWin7Menu && s_bAllPrograms) ::PostMessage(g_TopWin7Menu,WM_CLOSE,0,0);
-	}
+	for (std::vector<CMenuContainer*>::reverse_iterator it=s_Menus.rbegin();it!=s_Menus.rend();++it)
+		if ((*it)->m_hWnd && !(*it)->m_bDestroyed)
+		{
+			(*it)->PostMessage(WM_CLOSE);
+			(*it)->m_bClosing=true;
+		}
+	if (g_TopWin7Menu && s_bAllPrograms) ::PostMessage(g_TopWin7Menu,WM_CLOSE,0,0);
 #endif
 
 	return 0;
@@ -6670,8 +6665,7 @@ bool CMenuContainer::GetDescription( int index, wchar_t *text, int size )
 			{
 				if (SUCCEEDED(pLink->GetDescription(text,size)) && text[0])
 					return true;
-				wchar_t args[256];
-				if (SUCCEEDED(pLink->GetArguments(args,_countof(args))) && args[0])
+				if (jumpItem.bHasArguments)
 				{
 					// don't use default tip for items with arguments
 					Strcpy(text,size,item.name);
@@ -7329,8 +7323,9 @@ static void NewVersionCallback( VersionData &data )
 	wchar_t cmdLine[1024];
 	Sprintf(cmdLine,_countof(cmdLine),L"\"%s\" -popup",path);
 	STARTUPINFO startupInfo={sizeof(startupInfo)};
-	PROCESS_INFORMATION processInfo;
-	memset(&processInfo,0,sizeof(processInfo));
+	// don't display busy cursor as we are doing this on background
+	startupInfo.dwFlags=STARTF_FORCEOFFFEEDBACK;
+	PROCESS_INFORMATION processInfo{};
 	if (CreateProcess(path,cmdLine,NULL,NULL,TRUE,0,NULL,NULL,&startupInfo,&processInfo))
 	{
 		CloseHandle(processInfo.hThread);
@@ -7709,27 +7704,57 @@ HWND CMenuContainer::ToggleStartMenu( int taskbarId, bool bKeyboard, bool bAllPr
 
 	s_bHasUpdates=(!bRemote || GetSettingBool(L"RemoteShutdown")) && GetSettingBool(L"CheckWinUpdates") && CheckForUpdates();
 
-	SYSTEM_POWER_CAPABILITIES powerCaps;
-	GetPwrCapabilities(&powerCaps);
-
-	bool bHibernate=false;
-	if (powerCaps.HiberFilePresent)
+	// Check control panel options for power buttons
+	bool bHibernate = true, bSleep = true, bLock = true;
 	{
-		bHibernate=true;
-/*	disabled for now, use group policy to hide Hibernate
-		// disable hibernate if hybrid sleep (fast s4) is enabled
-		SYSTEM_POWER_STATUS status;
-		if (GetSystemPowerStatus(&status) && (status.ACLineStatus==0 || status.ACLineStatus==1))
+		CRegKey regKeyButtons;
+		if (regKeyButtons.Open(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FlyoutMenuSettings", KEY_READ) == ERROR_SUCCESS)
 		{
-			GUID *pScheme;
-			if (PowerGetActiveScheme(NULL,&pScheme)==ERROR_SUCCESS)
-			{
-				DWORD index;
-				if ((status.ACLineStatus==1?PowerReadACValueIndex:PowerReadDCValueIndex)(NULL,pScheme,&GUID_SLEEP_SUBGROUP,&GUID_HIBERNATE_FASTS4_POLICY,&index)==ERROR_SUCCESS && index)
-					bHibernate=false;
-				LocalFree(pScheme);
-			}
-		}*/
+			DWORD dwValue = 1;
+			if (regKeyButtons.QueryDWORDValue(L"ShowHibernateOption", dwValue) == ERROR_SUCCESS)
+				if (dwValue == 0)
+					bHibernate = false;
+
+			if (regKeyButtons.QueryDWORDValue(L"ShowLockOption", dwValue) == ERROR_SUCCESS)
+				if (dwValue == 0)
+					bLock = false;
+
+			if (regKeyButtons.QueryDWORDValue(L"ShowSleepOption", dwValue) == ERROR_SUCCESS)
+				if (dwValue == 0)
+					bSleep = false;
+		}
+	}
+
+	if (bHibernate || bSleep)
+	{
+		SYSTEM_POWER_CAPABILITIES powerCaps;
+		GetPwrCapabilities(&powerCaps);
+
+		// no sleep capabilities, turn off the sleep option
+		if (!(powerCaps.SystemS1 || powerCaps.SystemS2 || powerCaps.SystemS3 || powerCaps.AoAc))
+		{
+			bSleep = false;
+		}
+
+		// no hibernate capabilities, turn off hibernate option
+		if (!powerCaps.HiberFilePresent)
+		{
+			bHibernate = false;
+			/*	disabled for now, use group policy to hide Hibernate
+					// disable hibernate if hybrid sleep (fast s4) is enabled
+					SYSTEM_POWER_STATUS status;
+					if (GetSystemPowerStatus(&status) && (status.ACLineStatus==0 || status.ACLineStatus==1))
+					{
+						GUID *pScheme;
+						if (PowerGetActiveScheme(NULL,&pScheme)==ERROR_SUCCESS)
+						{
+							DWORD index;
+							if ((status.ACLineStatus==1?PowerReadACValueIndex:PowerReadDCValueIndex)(NULL,pScheme,&GUID_SLEEP_SUBGROUP,&GUID_HIBERNATE_FASTS4_POLICY,&index)==ERROR_SUCCESS && index)
+								bHibernate=false;
+							LocalFree(pScheme);
+						}
+					}*/
+		}
 	}
 
 	for (int i=0;i<_countof(g_StdOptions);i++)
@@ -7939,8 +7964,11 @@ HWND CMenuContainer::ToggleStartMenu( int taskbarId, bool bKeyboard, bool bAllPr
 						g_StdOptions[i].options=MENU_ENABLED|MENU_EXPANDED;
 				}
 				break;
+			case MENU_LOCK:
+				g_StdOptions[i].options=(bLock)?MENU_ENABLED|MENU_EXPANDED:0;
+				break;
 			case MENU_SLEEP:
-				g_StdOptions[i].options=(!s_bNoClose && (powerCaps.SystemS1 || powerCaps.SystemS2 || powerCaps.SystemS3 || powerCaps.AoAc))?MENU_ENABLED|MENU_EXPANDED:0;
+				g_StdOptions[i].options=(!s_bNoClose && bSleep)?MENU_ENABLED|MENU_EXPANDED:0;
 				break;
 			case MENU_HIBERNATE:
 				g_StdOptions[i].options=(!s_bNoClose && bHibernate)?MENU_ENABLED|MENU_EXPANDED:0;

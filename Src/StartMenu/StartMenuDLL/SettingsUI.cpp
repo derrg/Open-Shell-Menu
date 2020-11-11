@@ -1001,7 +1001,7 @@ static const CStdCommand g_StdCommands[]={
 	{L"settings",IDS_SETTINGS_ITEM,IDS_SETTINGS_MENU_TIP,L"SettingsMenu",L"$Menu.Settings",L"",L"shell32.dll,330"},
 	{L"search",IDS_SEARCH_MENU_ITEM,IDS_SEARCH_TIP,L"SearchMenu",L"$Menu.Search",L"",L"shell32.dll,323"},
 	{L"search_box",IDS_SEARCH_BOX_ITEM,IDS_SEARCH_BOX_TIP,L"SearchBoxItem",L"$Menu.SearchBox",NULL,L"none",NULL,StdMenuItem::MENU_TRACK|StdMenuItem::MENU_OPENUP},
-	{L"help",IDS_HELP_ITEM,IDS_HELP_TIP,L"HelpItem",L"$Menu.Help",L"$Menu.HelpTip",L"shell32.dll,324"},
+	{L"help",IDS_HELP_ITEM,IDS_HELP_TIP,L"HelpItem",L"$Menu.Help",L"$Menu.HelpTip",L"imageres.dll,99"},
 	{L"run",IDS_RUN_ITEM,IDS_RUN_TIP,L"RunItem",L"$Menu.Run",L"$Menu.RunTip",L"shell32.dll,328"},
 	{L"logoff",IDS_SHUTDOWN_LOGOFF,IDS_LOGOFF_TIP,L"LogOffItem",L"$Menu.Logoff",L"$Menu.LogOffTip",L"shell32.dll,325",NULL,StdMenuItem::MENU_STYLE_CLASSIC1},
 	{L"logoff",IDS_SHUTDOWN_LOGOFF,IDS_LOGOFF_TIP,L"LogOffItem",L"$Menu.Logoff",L"$Menu.LogOffTip",L"none",NULL,StdMenuItem::MENU_STYLE_CLASSIC2},
@@ -1057,7 +1057,7 @@ L"RecentDocumentsItem.Label=$Menu.Documents\n"
 L"RecentDocumentsItem.Icon=shell32.dll,327\n"
 L"RecentDocumentsItem.Settings=ITEMS_FIRST\n"
 L"SettingsMenu.Command=settings\n"
-L"SettingsMenu.Items=ControlPanelItem, PCSettingsItem, SEPARATOR, SecurityItem, NetworkItem, PrintersItem, TaskbarSettingsItem, ProgramsFeaturesItem, SEPARATOR, MenuSettingsItem\n"
+L"SettingsMenu.Items=PCSettingsItem, ControlPanelItem, SEPARATOR, SecurityItem, NetworkItem, PrintersItem, TaskbarSettingsItem, ProgramsFeaturesItem, SEPARATOR, MenuSettingsItem\n"
 L"SettingsMenu.Label=$Menu.Settings\n"
 L"SettingsMenu.Icon=shell32.dll,330\n"
 L"SearchMenu.Command=search\n"
@@ -1068,7 +1068,7 @@ L"ComputerItem.Command=computer\n"
 L"HelpItem.Command=help\n"
 L"HelpItem.Label=$Menu.Help\n"
 L"HelpItem.Tip=$Menu.HelpTip\n"
-L"HelpItem.Icon=shell32.dll,324\n"
+L"HelpItem.Icon=imageres.dll,99\n"
 L"RunItem.Command=run\n"
 L"RunItem.Label=$Menu.Run\n"
 L"RunItem.Tip=$Menu.RunTip\n"
@@ -1183,7 +1183,7 @@ L"ShutdownItem.Icon=none\n"
 ;
 
 const wchar_t *g_DefaultStartMenu2=
-L"Items=COLUMN_PADDING, ProgramsMenu, AppsMenu, SearchBoxItem, COLUMN_BREAK, FavoritesItem, UserFilesItem, UserDocumentsItem, UserPicturesItem, ComputerItem, RecentDocumentsItem, SEPARATOR, ControlPanelItem, PCSettingsItem, SecurityItem, NetworkItem, PrintersItem, SEPARATOR, SearchMenu, HelpItem, RunItem, COLUMN_PADDING, SEPARATOR, ShutdownBoxItem\n"
+L"Items=COLUMN_PADDING, ProgramsMenu, AppsMenu, SearchBoxItem, COLUMN_BREAK, FavoritesItem, UserFilesItem, UserDocumentsItem, UserPicturesItem, ComputerItem, RecentDocumentsItem, SEPARATOR, PCSettingsItem, ControlPanelItem, SecurityItem, NetworkItem, PrintersItem, SEPARATOR, SearchMenu, HelpItem, RunItem, COLUMN_PADDING, SEPARATOR, ShutdownBoxItem\n"
 L"ProgramsMenu.Command=programs\n"
 L"ProgramsMenu.Label=$Menu.Programs\n"
 L"ProgramsMenu.Icon=shell32.dll,326\n"
@@ -1203,7 +1203,7 @@ L"SearchMenu.Icon=shell32.dll,323\n"
 L"HelpItem.Command=help\n"
 L"HelpItem.Label=$Menu.Help\n"
 L"HelpItem.Tip=$Menu.HelpTip\n"
-L"HelpItem.Icon=shell32.dll,324\n"
+L"HelpItem.Icon=imageres.dll,99\n"
 L"RunItem.Command=run\n"
 L"RunItem.Label=$Menu.Run\n"
 L"RunItem.Tip=$Menu.RunTip\n"
@@ -1379,9 +1379,9 @@ L"Item13.Settings=ITEM_DISABLED\n"
 L"Item14.Command=network_connections\n"
 L"Item14.Settings=ITEM_DISABLED\n"
 L"Item15.Command=separator\n"
-L"Item16.Command=control_panel\n"
+L"Item16.Command=pc_settings\n"
 L"Item16.Settings=TRACK_RECENT\n"
-L"Item17.Command=pc_settings\n"
+L"Item17.Command=control_panel\n"
 L"Item17.Settings=TRACK_RECENT\n"
 L"Item18.Command=admin\n"
 L"Item18.Settings=TRACK_RECENT|ITEM_DISABLED\n"
@@ -3718,7 +3718,6 @@ protected:
 	CWindow m_ImageClassic1, m_ImageClassic2, m_ImageWin7;
 	CWindow m_Tooltip;
 	CWindow m_ButtonAero, m_ButtonClassic, m_ButtonCustom;
-	bool m_bLargeBitmaps;
 	HICON m_hIcon;
 	CString m_IconPath;
 
@@ -3737,14 +3736,13 @@ LRESULT CMenuStyleDlg::OnInitDialog( UINT uMsg, WPARAM wParam, LPARAM lParam, BO
 	HDC hdc=::GetDC(NULL);
 	int dpi=GetDeviceCaps(hdc,LOGPIXELSY);
 	::ReleaseDC(NULL,hdc);
-	m_bLargeBitmaps=dpi>=144;
-	if (m_bLargeBitmaps)
+	bool bLargeBitmaps=dpi>=144;
 	{
-		HBITMAP bmp=(HBITMAP)LoadImage(g_Instance,MAKEINTRESOURCE(IDB_STYLE_CLASSIC1150),IMAGE_BITMAP,0,0,LR_CREATEDIBSECTION);
+		HBITMAP bmp=LoadImageResource(g_Instance,MAKEINTRESOURCE(bLargeBitmaps?IDB_STYLE_CLASSIC1150:IDB_STYLE_CLASSIC1),true,true);
 		m_ImageClassic1.SendMessage(STM_SETIMAGE,IMAGE_BITMAP,(LPARAM)bmp);
-		bmp=(HBITMAP)LoadImage(g_Instance,MAKEINTRESOURCE(IDB_STYLE_CLASSIC2150),IMAGE_BITMAP,0,0,LR_CREATEDIBSECTION);
+		bmp=LoadImageResource(g_Instance,MAKEINTRESOURCE(bLargeBitmaps?IDB_STYLE_CLASSIC2150:IDB_STYLE_CLASSIC2),true,true);
 		m_ImageClassic2.SendMessage(STM_SETIMAGE,IMAGE_BITMAP,(LPARAM)bmp);
-		bmp=(HBITMAP)LoadImage(g_Instance,MAKEINTRESOURCE(IDB_STYLE_WIN7150),IMAGE_BITMAP,0,0,LR_CREATEDIBSECTION);
+		bmp=LoadImageResource(g_Instance,MAKEINTRESOURCE(bLargeBitmaps?IDB_STYLE_WIN7150:IDB_STYLE_WIN7),true,true);
 		m_ImageWin7.SendMessage(STM_SETIMAGE,IMAGE_BITMAP,(LPARAM)bmp);
 	}
 
@@ -3779,7 +3777,6 @@ LRESULT CMenuStyleDlg::OnDestroy( UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL&
 {
 	if (m_hIcon) DestroyIcon(m_hIcon);
 	m_hIcon=NULL;
-	if (m_bLargeBitmaps)
 	{
 		HBITMAP bmp=(HBITMAP)m_ImageClassic1.SendMessage(STM_GETIMAGE,IMAGE_BITMAP);
 		if (bmp) DeleteObject(bmp);

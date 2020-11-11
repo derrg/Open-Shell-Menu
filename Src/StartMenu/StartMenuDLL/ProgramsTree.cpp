@@ -60,9 +60,9 @@ void CProgramsTree::Create( CMenuContainer *pOwner )
 	HWND hWnd=CreateWindowEx(0,WC_TREEVIEW,NULL,WS_CHILD|TVS_EDITLABELS|TVS_FULLROWSELECT|(CMenuContainer::s_TipHideTime?TVS_INFOTIP:0)|TVS_NOHSCROLL|TVS_SHOWSELALWAYS|TVS_NONEVENHEIGHT,0,0,0,0,pOwner->m_hWnd,NULL,g_Instance,NULL);
 	TreeView_SetExtendedStyle(hWnd,TVS_EX_AUTOHSCROLL,TVS_EX_AUTOHSCROLL);
 	const MenuSkin &skin=CMenuContainer::s_Skin;
-	m_TreeTheme=OpenThemeData(m_hWnd,L"treeview");
+	m_TreeTheme=OpenThemeData(hWnd,L"treeview");
 	if (skin.BHasScrollbar)
-		m_ScrollTheme=OpenThemeData(m_hWnd,L"scrollbar");
+		m_ScrollTheme=OpenThemeData(hWnd,L"scrollbar");
 
 	const MenuSkin::ItemDrawSettings &settings=skin.ItemSettings[MenuSkin::PROGRAMS_TREE_ITEM];
 
@@ -1601,8 +1601,6 @@ HRESULT CProgramsTree::Drop( IDataObject *pDataObj, DWORD grfKeyState, POINTL pt
 	CMenuContainer::s_bPreventClosing=true;
 	m_pOwner->AddRef();
 	pTarget->Drop(pDataObj,grfKeyState,pt,pdwEffect);
-	if (!bOld)
-		CMenuContainer::HideTemp(false);
 	CMenuContainer::s_bPreventClosing=bOld;
 	for (std::vector<CMenuContainer*>::iterator it=CMenuContainer::s_Menus.begin();it!=CMenuContainer::s_Menus.end();++it)
 		if (!(*it)->m_bDestroyed)

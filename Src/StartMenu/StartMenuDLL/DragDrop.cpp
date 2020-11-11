@@ -248,7 +248,6 @@ bool CMenuContainer::DragOutApps( const CItemManager::ItemInfo *pInfo )
 	s_bDragFromTree=false;
 	if (!m_bDestroyed)
 		KillTimer(TIMER_DRAG);
-	HideTemp(false);
 	s_bPreventClosing=false;
 
 	if (s_bDragClosed)
@@ -343,7 +342,6 @@ bool CMenuContainer::DragOut( int index, bool bApp )
 	if (!m_bDestroyed)
 		KillTimer(TIMER_DRAG);
 	s_bDragMovable=false;
-	HideTemp(false);
 	s_bPreventClosing=false;
 
 	if (s_bDragClosed)
@@ -854,21 +852,29 @@ HRESULT STDMETHODCALLTYPE CMenuContainer::Drop( IDataObject *pDataObj, DWORD grf
 			CComQIPtr<IDataObjectAsyncCapability> pAsync=pDataObj;
 			if (pAsync)
 				pAsync->SetAsyncMode(FALSE);
-			for (std::vector<CMenuContainer*>::iterator it=s_Menus.begin();it!=s_Menus.end();++it)
-				if (!(*it)->m_bDestroyed)
-					(*it)->EnableWindow(FALSE); // disable all menus
+			for (auto& it : s_Menus)
+			{
+				if (!it->m_bDestroyed)
+				{
+					it->EnableWindow(FALSE); // disable all menus
+					it->SetWindowPos(HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+				}
+			}
 			bool bAllPrograms=s_bAllPrograms;
 			if (bAllPrograms) ::EnableWindow(g_TopWin7Menu,FALSE);
 			bool bOld=s_bPreventClosing;
 			s_bPreventClosing=true;
 			AddRef();
 			pTarget->Drop(pDataObj,grfKeyState,pt,pdwEffect);
-			if (!bOld)
-				HideTemp(false);
 			s_bPreventClosing=bOld;
-			for (std::vector<CMenuContainer*>::iterator it=s_Menus.begin();it!=s_Menus.end();++it)
-				if (!(*it)->m_bDestroyed)
-					(*it)->EnableWindow(TRUE); // enable all menus
+			for (auto& it : s_Menus)
+			{
+				if (!it->m_bDestroyed)
+				{
+					it->EnableWindow(TRUE); // enable all menus
+					it->SetWindowPos(HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+				}
+			}
 			if (bAllPrograms) ::EnableWindow(g_TopWin7Menu,TRUE);
 		}
 		else

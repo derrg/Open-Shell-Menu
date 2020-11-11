@@ -16,6 +16,7 @@
 #include "ResourceHelper.h"
 #include "Translations.h"
 #include <shlobj.h>
+#include "DesktopToasts/DesktopToasts.h"
 
 
 void ClosingSettings( HWND hWnd, int flags, int command )
@@ -59,11 +60,13 @@ static CSetting g_Settings[]={
 {L"Update",CSetting::TYPE_GROUP},
 	{L"Language",CSetting::TYPE_STRING,0,0,L"",CSetting::FLAG_SHARED},
 	{L"Update",CSetting::TYPE_BOOL,0,0,1,CSetting::FLAG_SHARED},
+	{L"Nightly",CSetting::TYPE_BOOL,0,0,0,CSetting::FLAG_SHARED},
 
 	{NULL}
 };
 
 const int SETTING_UPDATE=2;
+const int SETTING_NIGHTLY=3;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -78,6 +81,7 @@ public:
 		MESSAGE_HANDLER( WM_GETMINMAXINFO, OnGetMinMaxInfo )
 		MESSAGE_HANDLER( WM_CTLCOLORSTATIC, OnColorStatic )
 		COMMAND_HANDLER( IDC_CHECKAUTOCHECK, BN_CLICKED, OnCheckAuto )
+		COMMAND_HANDLER( IDC_CHECKNIGHTLY, BN_CLICKED, OnCheckNightly )
 		COMMAND_HANDLER( IDC_BUTTONCHECKNOW, BN_CLICKED, OnCheckNow )
 		COMMAND_HANDLER( IDC_BUTTONDOWNLOAD, BN_CLICKED, OnDownload )
 		COMMAND_HANDLER( IDC_CHECKDONT, BN_CLICKED, OnDontRemind )
@@ -113,6 +117,7 @@ protected:
 	LRESULT OnCancel( WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled );
 	LRESULT OnColorStatic( UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled );
 	LRESULT OnCheckAuto( WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled );
+	LRESULT OnCheckNightly( WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled );
 	LRESULT OnCheckNow( WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled );
 	LRESULT OnDownload( WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled );
 	LRESULT OnDontRemind( WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled );
@@ -160,6 +165,13 @@ LRESULT CUpdateDlg::OnInitDialog( UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL&
 	CheckDlgButton(IDC_CHECKAUTOCHECK,check?BST_CHECKED:BST_UNCHECKED);
 	GetDlgItem(IDC_CHECKAUTOCHECK).EnableWindow(!(g_Settings[SETTING_UPDATE].flags&CSetting::FLAG_LOCKED_MASK));
 	GetDlgItem(IDC_BUTTONCHECKNOW).EnableWindow(!(g_Settings[SETTING_UPDATE].flags&CSetting::FLAG_LOCKED_MASK) || check);
+
+	bool nightly = false;
+	if (g_Settings[SETTING_NIGHTLY].value.vt == VT_I4)
+		nightly = g_Settings[SETTING_NIGHTLY].value.intVal != 0;
+	CheckDlgButton(IDC_CHECKNIGHTLY, nightly ? BST_CHECKED : BST_UNCHECKED);
+	GetDlgItem(IDC_CHECKNIGHTLY).EnableWindow(!(g_Settings[SETTING_NIGHTLY].flags & CSetting::FLAG_LOCKED_MASK) && check);
+
 	UpdateUI();
 
 	return TRUE;
@@ -209,6 +221,17 @@ LRESULT CUpdateDlg::OnCheckAuto( WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL&
 	bool check=IsDlgButtonChecked(IDC_CHECKAUTOCHECK)==BST_CHECKED;
 	g_Settings[SETTING_UPDATE].value=CComVariant(check?1:0);
 	g_Settings[SETTING_UPDATE].flags&=~CSetting::FLAG_DEFAULT;
+	GetDlgItem(IDC_CHECKNIGHTLY).EnableWindow(check);
+	UpdateUI();
+	return 0;
+}
+
+LRESULT CUpdateDlg::OnCheckNightly(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled)
+{
+	CSettingsLockWrite lock;
+	bool check = IsDlgButtonChecked(IDC_CHECKNIGHTLY) == BST_CHECKED;
+	g_Settings[SETTING_NIGHTLY].value = CComVariant(check ? 1 : 0);
+	g_Settings[SETTING_NIGHTLY].flags &= ~CSetting::FLAG_DEFAULT;
 	UpdateUI();
 	return 0;
 }
@@ -319,7 +342,7 @@ LRESULT CUpdateDlg::OnDontRemind( WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL
 
 LRESULT CUpdateDlg::OnWeb( int idCtrl, LPNMHDR pnmh, BOOL& bHandled )
 {
-	ShellExecute(m_hWnd,NULL,L"https://github.com/Open-Shell/Open-Shell-Menu",NULL,NULL,SW_SHOWNORMAL);
+	ShellExecute(m_hWnd,NULL,L"https://open-shell.github.io/Open-Shell-Menu/",NULL,NULL,SW_SHOWNORMAL);
 	return 0;
 }
 
@@ -399,6 +422,9 @@ void CUpdateDlg::UpdateUI( void )
 
 void CUpdateDlg::Run( void )
 {
+	if (m_hWnd)
+		return;
+
 	DLGTEMPLATE *pTemplate=LoadDialogEx(IDD_UPDATE);
 	Create(NULL,pTemplate);
 	MSG msg;
@@ -457,15 +483,25 @@ protected:
 
 ///////////////////////////////////////////////////////////////////////////////
 
+class UpdateToasts : public DesktopToasts
+{
+public:
+	UpdateToasts() : DesktopToasts(L"OpenShell.Update") {}
+
+private:
+	void OnToastActivate(LPCWSTR invokedArgs) override
+	{
+		g_UpdateDlg.Run();
+	}
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
 int WINAPI wWinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpstrCmdLine, int nCmdShow )
 {
 	INITCOMMONCONTROLSEX init={sizeof(init),ICC_STANDARD_CLASSES};
 	InitCommonControlsEx(&init);
-/*
-	VersionData data;
-	data.Load(L"D:\\Work\\OpenShell\\Setup\\Final\\update_4.0.4.ver",false);
-	return 0;
-*/
+
 	// prevent multiple instances from running on the same desktop
 	// the assumption is that multiple desktops for the same user will have different name (but may repeat across users)
 	wchar_t userName[256];
@@ -491,8 +527,6 @@ int WINAPI wWinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpstrC
 	CString language=GetSettingString(L"Language");
 	ParseTranslations(NULL,language);
 
-	g_Instance=hInstance;
-
 	HINSTANCE resInstance=LoadTranslationDll(language);
 
 	LoadTranslationResources(resInstance,g_LoadDialogs);
@@ -504,6 +538,9 @@ int WINAPI wWinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpstrC
 
 	COwnerWindow ownerWindow;
 	ownerWindow.Create(NULL,0,0,WS_POPUP);
+
+	UpdateToasts toasts;
+
 	if (wcsstr(lpstrCmdLine,L"-popup")!=NULL)
 	{
 		g_UpdateDlg.UpdateData();
@@ -511,57 +548,85 @@ int WINAPI wWinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpstrC
 		int sleep=5000-(timeGetTime()-time0);
 		if (sleep>0)
 			Sleep(sleep);
-		HWND balloon=CreateWindowEx(WS_EX_TOPMOST|WS_EX_TOOLWINDOW|(IsLanguageRTL()?WS_EX_LAYOUTRTL:0),TOOLTIPS_CLASS,NULL,WS_POPUP|TTS_CLOSE|TTS_NOPREFIX,0,0,0,0,NULL,NULL,g_Instance,NULL);
-		SendMessage(balloon,TTM_SETMAXTIPWIDTH,0,500);
-		TOOLINFO tool={sizeof(tool),TTF_ABSOLUTE|TTF_TRANSPARENT|TTF_TRACK|(IsLanguageRTL()?TTF_RTLREADING:0U)};
-		tool.uId=1;
-		CString message=LoadStringEx(g_UpdateDlg.HasNewLanguage()?IDS_LANG_NEWVERSION:IDS_NEWVERSION);
-		tool.lpszText=(wchar_t*)(const wchar_t*)message;
-		SendMessage(balloon,TTM_ADDTOOL,0,(LPARAM)&tool);
-		SendMessage(balloon,TTM_SETTITLE,(WPARAM)LoadIcon(g_Instance,MAKEINTRESOURCE(IDI_APPICON)),(LPARAM)(const wchar_t*)LoadStringEx(IDS_UPDATE_TITLE));
-		APPBARDATA appbar={sizeof(appbar)};
-		SHAppBarMessage(ABM_GETTASKBARPOS,&appbar);
-		MONITORINFO info={sizeof(info)};
-		GetMonitorInfo(MonitorFromWindow(appbar.hWnd,MONITOR_DEFAULTTOPRIMARY),&info);
-		SendMessage(balloon,TTM_TRACKPOSITION,0,0);
-		SendMessage(balloon,TTM_TRACKACTIVATE,TRUE,(LPARAM)&tool);
-		RECT rc;
-		GetWindowRect(balloon,&rc);
-		LONG pos;
-		if (appbar.uEdge==ABE_LEFT)
-			pos=MAKELONG(info.rcWork.left,info.rcWork.bottom-rc.bottom+rc.top);
-		else if (appbar.uEdge==ABE_RIGHT)
-			pos=MAKELONG(info.rcWork.right-rc.right+rc.left,info.rcWork.bottom-rc.bottom+rc.top);
-		else if (appbar.uEdge==ABE_TOP)
-			pos=MAKELONG(IsLanguageRTL()?info.rcWork.left:info.rcWork.right-rc.right+rc.left,info.rcWork.top);
-		else
-			pos=MAKELONG(IsLanguageRTL()?info.rcWork.left:info.rcWork.right-rc.right+rc.left,info.rcWork.bottom-rc.bottom+rc.top);
-		SendMessage(balloon,TTM_TRACKPOSITION,0,pos);
-		SetWindowSubclass(balloon,SubclassBalloonProc,0,'CLSH');
-		PlaySound(L"SystemNotification",NULL,SND_APPLICATION|SND_ALIAS|SND_ASYNC|SND_NODEFAULT|SND_SYSTEM);
-		int time0=timeGetTime();
-		while (IsWindowVisible(balloon))
+
+		auto title = LoadStringEx(IDS_UPDATE_TITLE);
+		auto message = LoadStringEx(g_UpdateDlg.HasNewLanguage() ? IDS_LANG_NEWVERSION : IDS_NEWVERSION);
+
+		if (toasts)
 		{
-			if (time0 && (timeGetTime()-time0)>=15000)
-			{
-				time0=0;
-				TOOLINFO tool={sizeof(tool)};
-				tool.uId=1;
-				SendMessage(balloon,TTM_TRACKACTIVATE,FALSE,(LPARAM)&tool);
-			}
-			MSG msg;
-			while (PeekMessage(&msg,0,0,0,PM_REMOVE))
-			{
-				TranslateMessage(&msg);
-				DispatchMessage(&msg);
-			}
-			Sleep(10);
+			toasts.DisplaySimpleToast(title, message);
 		}
+		else
+		{
+			HWND balloon = CreateWindowEx(WS_EX_TOPMOST | WS_EX_TOOLWINDOW | (IsLanguageRTL() ? WS_EX_LAYOUTRTL : 0), TOOLTIPS_CLASS, NULL, WS_POPUP | TTS_CLOSE | TTS_NOPREFIX, 0, 0, 0, 0, NULL, NULL, g_Instance, NULL);
+			SendMessage(balloon, TTM_SETMAXTIPWIDTH, 0, 500);
+			TOOLINFO tool = { sizeof(tool),TTF_ABSOLUTE | TTF_TRANSPARENT | TTF_TRACK | (IsLanguageRTL() ? TTF_RTLREADING : 0U) };
+			tool.uId = 1;
+			tool.lpszText = (wchar_t*)(const wchar_t*)message;
+			SendMessage(balloon, TTM_ADDTOOL, 0, (LPARAM)&tool);
+			SendMessage(balloon, TTM_SETTITLE, (WPARAM)LoadIcon(g_Instance, MAKEINTRESOURCE(IDI_APPICON)), (LPARAM)(const wchar_t*)title);
+			APPBARDATA appbar = { sizeof(appbar) };
+			SHAppBarMessage(ABM_GETTASKBARPOS, &appbar);
+			MONITORINFO info = { sizeof(info) };
+			GetMonitorInfo(MonitorFromWindow(appbar.hWnd, MONITOR_DEFAULTTOPRIMARY), &info);
+			SendMessage(balloon, TTM_TRACKPOSITION, 0, 0);
+			SendMessage(balloon, TTM_TRACKACTIVATE, TRUE, (LPARAM)&tool);
+			RECT rc;
+			GetWindowRect(balloon, &rc);
+			LONG pos;
+			if (appbar.uEdge == ABE_LEFT)
+				pos = MAKELONG(info.rcWork.left, info.rcWork.bottom - rc.bottom + rc.top);
+			else if (appbar.uEdge == ABE_RIGHT)
+				pos = MAKELONG(info.rcWork.right - rc.right + rc.left, info.rcWork.bottom - rc.bottom + rc.top);
+			else if (appbar.uEdge == ABE_TOP)
+				pos = MAKELONG(IsLanguageRTL() ? info.rcWork.left : info.rcWork.right - rc.right + rc.left, info.rcWork.top);
+			else
+				pos = MAKELONG(IsLanguageRTL() ? info.rcWork.left : info.rcWork.right - rc.right + rc.left, info.rcWork.bottom - rc.bottom + rc.top);
+			SendMessage(balloon, TTM_TRACKPOSITION, 0, pos);
+			SetWindowSubclass(balloon, SubclassBalloonProc, 0, 'CLSH');
+			PlaySound(L"SystemNotification", NULL, SND_APPLICATION | SND_ALIAS | SND_ASYNC | SND_NODEFAULT | SND_SYSTEM);
+			int time0 = timeGetTime();
+			while (IsWindowVisible(balloon))
+			{
+				if (time0 && (timeGetTime() - time0) >= 15000)
+				{
+					time0 = 0;
+					TOOLINFO tool = { sizeof(tool) };
+					tool.uId = 1;
+					SendMessage(balloon, TTM_TRACKACTIVATE, FALSE, (LPARAM)&tool);
+				}
+				MSG msg;
+				while (PeekMessage(&msg, 0, 0, 0, PM_REMOVE))
+				{
+					TranslateMessage(&msg);
+					DispatchMessage(&msg);
+				}
+				Sleep(10);
+			}
+		}
+	}
+	else if (wcsstr(lpstrCmdLine, L"-ToastActivated"))
+	{
+		g_UpdateDlg.UpdateData();
+		// dialog will be shown once toast is activated (UpdateToasts::OnToastActivate)
 	}
 	else
 	{
 		g_UpdateDlg.Run();
 	}
+
+	// process messages for a while
+	for (int i = 0; i < 100; i++)
+	{
+		MSG msg;
+		while (PeekMessage(&msg, 0, 0, 0, PM_REMOVE))
+		{
+			TranslateMessage(&msg);
+			DispatchMessage(&msg);
+		}
+		Sleep(10);
+	}
+
 	ownerWindow.DestroyWindow();
 	CoUninitialize();
 	return 0;

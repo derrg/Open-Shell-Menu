@@ -173,6 +173,7 @@ public:
 	const ItemInfo *GetItemInfo( CString path, int refreshFlags, TLocation location=LOCATION_UNKNOWN );
 	const ItemInfo *GetCustomIcon( const wchar_t *location, int index, TIconSizeType iconSizeType, bool bTemp );
 	const ItemInfo *GetCustomIcon( const wchar_t *path, TIconSizeType iconSizeType );
+	const ItemInfo* GetLinkIcon(IShellLink* link, TIconSizeType iconSizeType);
 	const ItemInfo *GetMetroAppInfo10( const wchar_t *appid );
 	void UpdateItemInfo( const ItemInfo *pInfo, int refreshFlags, bool bHasWriteLock=false );
 	void WaitForShortcuts( const POINT &balloonPos );
@@ -466,6 +467,7 @@ bool MenuGetFileTimestamp( const wchar_t *path, FILETIME *pWriteTime, FILETIME *
 STDAPI ShGetKnownFolderPath( REFKNOWNFOLDERID rfid, PWSTR *pPath );
 STDAPI ShGetKnownFolderIDList(REFKNOWNFOLDERID rfid, PIDLIST_ABSOLUTE *pPidl );
 STDAPI ShGetKnownFolderItem(REFKNOWNFOLDERID rfid, IShellItem **ppItem );
+HBITMAP ColorizeMonochromeImage(HBITMAP bitmap, DWORD color);
 
 #define TASKBAR_PINNED_ROOT L"%APPDATA%\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar"
 #define START_MENU_PINNED_ROOT L"%APPDATA%\\OpenShell\\Pinned"

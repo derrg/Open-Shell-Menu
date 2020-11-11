@@ -55,8 +55,8 @@ GUID IID_IApplicationResolver8={0xde25675a,0x72de,0x44b4,{0x93,0x73,0x05,0x17,0x
 
 interface IResourceContext;
 
-const GUID IID_IResourceMap={0x6e21e72b, 0xb9b0, 0x42ae, {0xa6, 0x86, 0x98, 0x3c, 0xf7, 0x84, 0xed, 0xcd}};
-interface IResourceMap : public IUnknown
+MIDL_INTERFACE("6e21e72b-b9b0-42ae-a686-983cf784edcd")
+IResourceMap : public IUnknown
 {
 	virtual HRESULT STDMETHODCALLTYPE GetUri(const wchar_t **pUri ) = 0;
 	virtual HRESULT STDMETHODCALLTYPE GetSubtree(const wchar_t *propName, IResourceMap **pSubTree ) = 0;
@@ -76,8 +76,8 @@ enum RESOURCE_SCALE
 	RES_SCALE_80 =3,
 };
 
-const GUID IID_ResourceContext={0xe3c22b30, 0x8502, 0x4b2f, {0x91, 0x33, 0x55, 0x96, 0x74, 0x58, 0x7e, 0x51}};
-interface IResourceContext : public IUnknown
+MIDL_INTERFACE("e3c22b30-8502-4b2f-9133-559674587e51")
+IResourceContext : public IUnknown
 {
 	virtual HRESULT STDMETHODCALLTYPE GetLanguage( void ) = 0;
 	virtual HRESULT STDMETHODCALLTYPE GetHomeRegion( wchar_t *pRegion ) = 0;
@@ -142,10 +142,11 @@ static bool DetectGrayscaleImage( const unsigned int *bits, int stride, int widt
 		for (int x=0;x<width;x++)
 		{
 			unsigned int pixel=bits[x];
+			int a=(pixel>>24)&255;
 			int r=(pixel>>16)&255;
 			int g=(pixel>>8)&255;
 			int b=(pixel)&255;
-			if (abs(r-g)>2 || abs(r-b)>2 || abs(g-b)>2)
+			if (abs(a-r)>2 || abs(r-g)>2 || abs(r-b)>2 || abs(g-b)>2)
 				return false; // found colored pixel
 			if (!(pixel&0xFF000000))
 				transparent++;
@@ -173,6 +174,27 @@ static void CreateMonochromeImage( unsigned int *bits, int stride, int width, in
 			pixel=(a<<24)|(r<<16)|(g<<8)|b;
 		}
 	}
+}
+
+HBITMAP ColorizeMonochromeImage(HBITMAP bitmap, DWORD color)
+{
+	{
+		BITMAP info{};
+		GetObject(bitmap, sizeof(info), &info);
+		if (!DetectGrayscaleImage((const unsigned int*)info.bmBits, info.bmWidth, info.bmWidth, info.bmHeight))
+			return nullptr;
+	}
+
+	HBITMAP bmp = (HBITMAP)CopyImage(bitmap, IMAGE_BITMAP, 0, 0, LR_CREATEDIBSECTION);
+	if (bmp)
+	{
+		BITMAP info{};
+		GetObject(bmp, sizeof(info), &info);
+
+		CreateMonochromeImage((unsigned int*)info.bmBits, info.bmWidth, info.bmWidth, info.bmHeight, color);
+	}
+
+	return bmp;
 }
 
 static HBITMAP BitmapFromMetroIcon( HICON hIcon, int bitmapSize, int iconSize, DWORD metroColor, bool bDestroyIcon=true )
@@ -258,7 +280,6 @@ static HBITMAP BitmapFromMetroBitmap( HBITMAP hBitmap, int bitmapSize, DWORD met
 	HGDIOBJ bmp0=SelectObject(hdc,bmp);
 	HGDIOBJ bmp02=SelectObject(hsrc,hBitmap);
 	int offset=(bitmapSize-info.bmWidth)/2;
-	bool bInvert=g_bInvertMetroIcons;
 	if (g_bInvertMetroIcons && bGrayscale)
 	{
 		FillRect(hdc,&rc,(HBRUSH)GetStockObject(BLACK_BRUSH));
@@ -299,10 +320,9 @@ static HBITMAP BitmapFromMetroBitmap( HBITMAP hBitmap, int bitmapSize, DWORD met
 
 ///////////////////////////////////////////////////////////////////////////////
 
-static HBITMAP LoadMetroBitmap0( const wchar_t *path, int bitmapSize, DWORD metroColor )
+static HBITMAP LoadMetroBitmap0(const wchar_t *path, int bitmapSize, DWORD metroColor = 0xFFFFFFFF)
 {
-	int iconSize=g_bInvertMetroIcons?bitmapSize:(bitmapSize-2);
-	SIZE size={-iconSize,iconSize};
+	SIZE size={-bitmapSize,bitmapSize};
 	HBITMAP hBitmap=LoadImageFile(path,&size,true,true,NULL);
 	if (hBitmap)
 	{
@@ -439,16 +459,8 @@ static HBITMAP LoadMetroBitmap2( const wchar_t *location, int bitmapSize, DWORD 
 	}
 	if (iconSize)
 	{
-		if (g_bInvertMetroIcons)
-		{
-			if (iconSize>bitmapSize)
-				iconSize=bitmapSize;
-		}
-		else
-		{
-			if (iconSize>bitmapSize-2)
-				iconSize=bitmapSize-2;
-		}
+		if (iconSize>bitmapSize)
+			iconSize=bitmapSize;
 		SIZE size={iconSize,iconSize};
 		HBITMAP hBitmap=LoadImageFile(path,&size,true,true,NULL);
 		if (hBitmap)
@@ -1111,6 +1123,49 @@ const CItemManager::ItemInfo *CItemManager::GetCustomIcon( const wchar_t *path, 
 		index=-_wtol(c+1);
 	}
 	return GetCustomIcon(text,index,iconSizeType,false);
+}
+
+const CItemManager::ItemInfo* CItemManager::GetLinkIcon(IShellLink* link, TIconSizeType iconSizeType)
+{
+	wchar_t location[_MAX_PATH];
+	int index;
+
+	if (link->GetIconLocation(location, _countof(location), &index) == S_OK && location[0])
+		return GetCustomIcon(location, index, iconSizeType, (index == 0)); // assuming that if index!=0 the icon comes from a permanent location like a dll or exe
+
+	CComQIPtr<IPropertyStore> store(link);
+	if (store)
+	{
+		//  Name:     System.AppUserModel.DestListLogoUri -- PKEY_AppUserModel_DestListLogoUri
+		//  Type:     String -- VT_LPWSTR
+		//  FormatID: {9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3}, 29
+		static const PROPERTYKEY PKEY_AppUserModel_DestListLogoUri = { {0x9F4C2855, 0x9F79, 0x4B39, {0xA8, 0xD0, 0xE1, 0xD4, 0x2D, 0xE1, 0xD5, 0xF3}}, 29 };
+
+		auto logoUri = GetPropertyStoreString(store, PKEY_AppUserModel_DestListLogoUri);
+		if (!logoUri.IsEmpty())
+		{
+			auto appId = GetPropertyStoreString(store, PKEY_AppUserModel_ID);
+			if (!appId.IsEmpty())
+			{
+				CComPtr<IResourceManager> resManager;
+				if (SUCCEEDED(resManager.CoCreateInstance(CLSID_ResourceManager)))
+				{
+					if (SUCCEEDED(resManager->InitializeForPackage(GetPackageFullName(appId))))
+					{
+						CComPtr<IResourceMap> resMap;
+						if (SUCCEEDED(resManager->GetMainResourceMap(IID_PPV_ARGS(&resMap))))
+						{
+							CComString location;
+							if (SUCCEEDED(resMap->GetFilePath(logoUri, &location)))
+								return GetCustomIcon(location, -65536, iconSizeType, true);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return nullptr;
 }
 
 const CItemManager::ItemInfo *CItemManager::GetMetroAppInfo10( const wchar_t *appid )
@@ -1823,7 +1878,11 @@ void CItemManager::RefreshItemInfo( ItemInfo *pInfo, int refreshFlags, IShellIte
 					{
 						newInfo.bLink=true;
 						pStore=pLink;
-
+#ifdef _DEBUG
+						LOG_MENU(LOG_OPEN, L"Link: %s", newInfo.path);
+						LOG_MENU(LOG_OPEN, L"Link property store:");
+						LogPropertyStore(LOG_OPEN, pStore);
+#endif
 						if (SUCCEEDED(pLink->GetIDList(&newInfo.targetPidl)))
 						{
 							wchar_t path[_MAX_PATH];
@@ -1831,6 +1890,28 @@ void CItemManager::RefreshItemInfo( ItemInfo *pInfo, int refreshFlags, IShellIte
 							{
 								CharUpper(path);
 								newInfo.targetPATH=path;
+							}
+
+							CComPtr<IShellItem> target;
+							if (SUCCEEDED(SHCreateItemFromIDList(newInfo.targetPidl, IID_PPV_ARGS(&target))))
+							{
+								CComPtr<IPropertyStore> store;
+								if (SUCCEEDED(target->BindToHandler(nullptr, BHID_PropertyStore, IID_PPV_ARGS(&store))))
+								{
+#ifdef _DEBUG
+									LOG_MENU(LOG_OPEN, L"Target property store:");
+									LogPropertyStore(LOG_OPEN, store);
+#endif
+									PROPVARIANT val;
+									PropVariantInit(&val);
+									if (SUCCEEDED(store->GetValue(PKEY_MetroAppLauncher, &val)) && (val.vt == VT_I4 || val.vt == VT_UI4) && val.intVal)
+									{
+										newInfo.bLink = false;
+										pItem = target;
+										pStore = store;
+									}
+									PropVariantClear(&val);
+								}
 							}
 						}
 					}
@@ -1923,7 +2004,6 @@ void CItemManager::RefreshItemInfo( ItemInfo *pInfo, int refreshFlags, IShellIte
 			{
 				newInfo.targetPidl.Clear();
 				newInfo.targetPATH.Empty();
-				newInfo.metroName.Empty();
 				newInfo.iconPath.Empty();
 				newInfo.bNoPin=newInfo.bNoNew=false;
 				if (!newInfo.bMetroApp)
@@ -2296,12 +2376,6 @@ void CItemManager::LoadShellIcon( IShellItem *pItem, int refreshFlags, const Ico
 	int smallIconSize=SMALL_ICON_SIZE;
 	int largeIconSize=LARGE_ICON_SIZE;
 	int extraLargeIconSize=EXTRA_LARGE_ICON_SIZE;
-	if (pMetroColor)
-	{
-		smallIconSize-=2;
-		largeIconSize-=2;
-		extraLargeIconSize-=2;
-	}
 	HICON hSmallIcon=NULL, hLargeIcon=NULL, hExtraLargeIcon=NULL;
 	if (bNotFileName)
 	{
@@ -2414,14 +2488,13 @@ void CItemManager::LoadMetroIcon( IShellItem *pItem, int &refreshFlags, const Ic
 	if (FAILED(pResManager->InitializeForPackage(packageName)))
 		return;
 	CComPtr<IResourceMap> pResMap;
-	if (FAILED(pResManager->GetMainResourceMap(IID_IResourceMap,(void**)&pResMap)))
+	if (FAILED(pResManager->GetMainResourceMap(IID_PPV_ARGS(&pResMap))))
 		return;
 	CComPtr<IResourceContext> pResContext;
-	if (FAILED(pResManager->GetDefaultContext(IID_ResourceContext,(void**)&pResContext)))
+	if (FAILED(pResManager->GetDefaultContext(IID_PPV_ARGS(&pResContext))))
 		return;
 	int iconFlags=0;
-	int delta=g_bInvertMetroIcons?0:2;
-	if ((refreshFlags&INFO_SMALL_ICON) && SetResContextTargetSize(pResContext,SMALL_ICON_SIZE-delta))
+	if ((refreshFlags&INFO_SMALL_ICON) && SetResContextTargetSize(pResContext,SMALL_ICON_SIZE))
 	{
 		CComString pLocation;
 		if (SUCCEEDED(pResMap->GetFilePath(iconName,&pLocation)))
@@ -2431,7 +2504,7 @@ void CItemManager::LoadMetroIcon( IShellItem *pItem, int &refreshFlags, const Ic
 			StoreInCache(hash,L"",hSmallBitmap,NULL,NULL,INFO_SMALL_ICON,smallIcon,largeIcon,extraLargeIcon,false,true);
 		}
 	}
-	if ((refreshFlags&INFO_LARGE_ICON) && SetResContextTargetSize(pResContext,LARGE_ICON_SIZE-delta))
+	if ((refreshFlags&INFO_LARGE_ICON) && SetResContextTargetSize(pResContext,LARGE_ICON_SIZE))
 	{
 		CComString pLocation;
 		if (SUCCEEDED(pResMap->GetFilePath(iconName,&pLocation)))
@@ -2441,7 +2514,7 @@ void CItemManager::LoadMetroIcon( IShellItem *pItem, int &refreshFlags, const Ic
 			StoreInCache(hash,L"",NULL,hLargeBitmap,NULL,INFO_LARGE_ICON,smallIcon,largeIcon,extraLargeIcon,false,true);
 		}
 	}
-	if ((refreshFlags&INFO_SMALL_ICON) && SetResContextTargetSize(pResContext,EXTRA_LARGE_ICON_SIZE-delta))
+	if ((refreshFlags&INFO_EXTRA_LARGE_ICON) && SetResContextTargetSize(pResContext,EXTRA_LARGE_ICON_SIZE))
 	{
 		CComString pLocation;
 		if (SUCCEEDED(pResMap->GetFilePath(iconName,&pLocation)))
@@ -2586,49 +2659,45 @@ void CItemManager::IconInfo::SetPath( const wchar_t *path )
 	timestamp.dwHighDateTime=timestamp.dwLowDateTime=0;
 }
 
-void CItemManager::LoadCustomIcon( const wchar_t *iconPath, int iconIndex, int refreshFlags, const IconInfo *&smallIcon, const IconInfo *&largeIcon, const IconInfo *&extraLargeIcon, bool bTemp )
+void CItemManager::LoadCustomIcon(const wchar_t *iconPath, int iconIndex, int refreshFlags, const IconInfo *&smallIcon, const IconInfo *&largeIcon, const IconInfo *&extraLargeIcon, bool bTemp)
 {
-	unsigned int hash=CalcFNVHash(iconPath,CalcFNVHash(&iconIndex,4));
+	unsigned int hash = CalcFNVHash(iconPath, CalcFNVHash(&iconIndex, 4));
 
-	FindInCache(hash,refreshFlags,smallIcon,largeIcon,extraLargeIcon);
-	if (!refreshFlags) return;
+	FindInCache(hash, refreshFlags, smallIcon, largeIcon, extraLargeIcon);
+	if (!refreshFlags)
+		return;
+
+	auto ExtractIconAsBitmap = [&](int iconSize) -> HBITMAP {
+
+		if (iconIndex == -65536)
+			return LoadMetroBitmap0(iconPath, iconSize);
+
+		HICON hIcon;
+
+		if (!*iconPath)
+			hIcon = (HICON)LoadImage(g_Instance, MAKEINTRESOURCE(-iconIndex), IMAGE_ICON, iconSize, iconSize, LR_DEFAULTCOLOR);
+		else
+			hIcon = ShExtractIcon(iconPath, iconIndex == -1 ? 0 : iconIndex, iconSize);
+
+		if (hIcon)
+			return BitmapFromIcon(hIcon, iconSize);
+
+		return nullptr;
+	};
 
 	// extract icon
-	HBITMAP hSmallBitmap=NULL, hLargeBitmap=NULL, hExtraLargeBitmap=NULL;
-	if (refreshFlags&INFO_SMALL_ICON)
-	{
-		HICON hIcon;
-		if (!*iconPath)
-			hIcon=(HICON)LoadImage(g_Instance,MAKEINTRESOURCE(-iconIndex),IMAGE_ICON,SMALL_ICON_SIZE,SMALL_ICON_SIZE,LR_DEFAULTCOLOR);
-		else
-			hIcon=ShExtractIcon(iconPath,iconIndex==-1?0:iconIndex,SMALL_ICON_SIZE);
-		if (hIcon)
-			hSmallBitmap=BitmapFromIcon(hIcon,SMALL_ICON_SIZE);
-	}
+	HBITMAP hSmallBitmap = nullptr, hLargeBitmap = nullptr, hExtraLargeBitmap = nullptr;
 
-	if (refreshFlags&INFO_LARGE_ICON)
-	{
-		HICON hIcon;
-		if (!*iconPath)
-			hIcon=(HICON)LoadImage(g_Instance,MAKEINTRESOURCE(-iconIndex),IMAGE_ICON,LARGE_ICON_SIZE,LARGE_ICON_SIZE,LR_DEFAULTCOLOR);
-		else
-			hIcon=ShExtractIcon(iconPath,iconIndex==-1?0:iconIndex,LARGE_ICON_SIZE);
-		if (hIcon)
-			hLargeBitmap=BitmapFromIcon(hIcon,LARGE_ICON_SIZE);
-	}
+	if (refreshFlags & INFO_SMALL_ICON)
+		hSmallBitmap = ExtractIconAsBitmap(SMALL_ICON_SIZE);
 
-	if (refreshFlags&INFO_EXTRA_LARGE_ICON)
-	{
-		HICON hIcon;
-		if (!*iconPath)
-			hIcon=(HICON)LoadImage(g_Instance,MAKEINTRESOURCE(-iconIndex),IMAGE_ICON,EXTRA_LARGE_ICON_SIZE,EXTRA_LARGE_ICON_SIZE,LR_DEFAULTCOLOR);
-		else
-			hIcon=ShExtractIcon(iconPath,iconIndex==-1?0:iconIndex,EXTRA_LARGE_ICON_SIZE);
-		if (hIcon)
-			hExtraLargeBitmap=BitmapFromIcon(hIcon,EXTRA_LARGE_ICON_SIZE);
-	}
+	if (refreshFlags & INFO_LARGE_ICON)
+		hLargeBitmap = ExtractIconAsBitmap(LARGE_ICON_SIZE);
 
-	StoreInCache(hash,bTemp?NULL:iconPath,hSmallBitmap,hLargeBitmap,hExtraLargeBitmap,refreshFlags,smallIcon,largeIcon,extraLargeIcon,bTemp,false);
+	if (refreshFlags & INFO_EXTRA_LARGE_ICON)
+		hExtraLargeBitmap = ExtractIconAsBitmap(EXTRA_LARGE_ICON_SIZE);
+
+	StoreInCache(hash, bTemp ? nullptr : iconPath, hSmallBitmap, hLargeBitmap, hExtraLargeBitmap, refreshFlags, smallIcon, largeIcon, extraLargeIcon, bTemp, false);
 }
 
 // Recursive function to preload the items for a folder

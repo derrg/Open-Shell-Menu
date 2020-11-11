@@ -402,7 +402,7 @@ void CMenuContainer::OpenSubMenu( int index, TActivateType type, bool bShift )
 	if (m_Options&CONTAINER_NOEXTENSIONS)
 		options|=CONTAINER_NOEXTENSIONS;
 
-	if (item.id==MENU_PROGRAMS || item.id==MENU_APPS || (m_Options&CONTAINER_MULTICOL_REC))
+	if (item.id==MENU_PROGRAMS || item.id==MENU_APPS || item.bFolder || (m_Options&CONTAINER_MULTICOL_REC))
 		options|=CONTAINER_MULTICOL_REC;
 	if ((options&CONTAINER_MULTICOL_REC) && !bShift)
 		options|=CONTAINER_MULTICOLUMN;
@@ -2192,11 +2192,15 @@ void CMenuContainer::ActivateItem( int index, TActivateType type, const POINT *p
 
 	if (res==CMD_PINSETTING)
 	{
-		CSearchManager::TItemCategory cat=(CSearchManager::TItemCategory)(item.categoryHash&CSearchManager::CATEGORY_MASK);
-		if (cat==CSearchManager::CATEGORY_SETTING)
-			CreatePinLink(pItemPidl1,item.name,NULL,0);
-		else if (cat==CSearchManager::CATEGORY_METROSETTING)
-			CreatePinLink(pItemPidl1,item.name,L"%windir%\\ImmersiveControlPanel\\systemsettings.exe",0);
+		CString iconPath;
+		if (item.pItemInfo)
+		{
+			CItemManager::RWLock lock(&g_ItemManager, false, CItemManager::RWLOCK_ITEMS);
+			if (_wcsicmp(PathFindExtension(item.pItemInfo->GetPath()), L".settingcontent-ms") == 0)
+				iconPath = L"%windir%\\ImmersiveControlPanel\\systemsettings.exe";
+		}
+
+		CreatePinLink(pItemPidl1, item.name, iconPath.IsEmpty() ? nullptr : iconPath.GetString(), 0);
 		m_bRefreshItems=true;
 	}
 
@@ -2396,7 +2400,6 @@ void CMenuContainer::ActivateItem( int index, TActivateType type, const POINT *p
 				}
 			}
 			DestroyMenu(menu2);
-			HideTemp(false);
 			s_bPreventClosing=false;
 
 			PITEMID_CHILD newPidl=NULL;
@@ -2485,7 +2488,6 @@ void CMenuContainer::ActivateItem( int index, TActivateType type, const POINT *p
 				Invalidate();
 				if (m_HotItem<0) SetHotItem(index);
 			}
-			HideTemp(false);
 			s_bPreventClosing=false;
 		}
 		SetContextItem(-1);
@@ -2742,7 +2744,6 @@ void CMenuContainer::ActivateItem( int index, TActivateType type, const POINT *p
 				else
 					SetFocus();
 			}
-			HideTemp(false);
 			s_bPreventClosing=false;
 			s_HotPos=GetMessagePos();
 			res=CMD_RENAME;
@@ -2802,10 +2803,12 @@ void CMenuContainer::ActivateItem( int index, TActivateType type, const POINT *p
 			if (bRefresh || bRefreshMain)
 				info.fMask|=CMIC_MASK_NOASYNC; // wait for delete/link commands to finish so we can refresh the menu
 
-			if ((type!=ACTIVATE_MENU && type!=ACTIVATE_DELETE) || GetWinVersion()<WIN_VER_WIN8)
-				s_bPreventClosing=true;
-			for (std::vector<CMenuContainer*>::iterator it=s_Menus.begin();it!=s_Menus.end();++it)
-				(*it)->EnableWindow(FALSE); // disable all menus
+			s_bPreventClosing=true;
+			for (auto& it : s_Menus)
+			{
+				it->EnableWindow(FALSE); // disable all menus
+				it->SetWindowPos(HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+			}
 			bool bAllPrograms=s_bAllPrograms;
 			if (bAllPrograms) ::EnableWindow(g_TopWin7Menu,FALSE);
 			info.hwnd=g_OwnerWindow;
@@ -2850,9 +2853,14 @@ void CMenuContainer::ActivateItem( int index, TActivateType type, const POINT *p
 					}
 				}
 			}
-			for (std::vector<CMenuContainer*>::iterator it=s_Menus.begin();it!=s_Menus.end();++it)
-				if (!(*it)->m_bDestroyed)
-					(*it)->EnableWindow(TRUE); // enable all menus
+			for (auto& it : s_Menus)
+			{
+				if (!it->m_bDestroyed)
+				{
+					it->EnableWindow(TRUE); // enable all menus
+					it->SetWindowPos(HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+				}
+			}
 			if (bAllPrograms) ::EnableWindow(g_TopWin7Menu,TRUE);
 			if (bRefreshMain && m_bSubMenu)
 			{
@@ -2880,7 +2888,6 @@ void CMenuContainer::ActivateItem( int index, TActivateType type, const POINT *p
 				else
 					SetFocus();
 			}
-			HideTemp(false);
 			s_bPreventClosing=false;
 
 			if (!bKeepOpen && !bRefresh && !bRefreshMain)

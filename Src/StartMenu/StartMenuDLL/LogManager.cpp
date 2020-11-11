@@ -7,10 +7,13 @@
 #include "stdafx.h"
 #include "LogManager.h"
 #include "ResourceHelper.h"
+#include "ComHelper.h"
+#include <propvarutil.h>
+#include <chrono>
 
 int g_LogCategories;
 static FILE *g_LogFile;
-static int g_LogTime;
+static std::chrono::time_point<std::chrono::steady_clock> g_LogTime;
 
 void InitLog( int categories, const wchar_t *fname )
 {
@@ -21,7 +24,7 @@ void InitLog( int categories, const wchar_t *fname )
 		wchar_t bom=0xFEFF;
 		fwrite(&bom,2,1,g_LogFile);
 		g_LogCategories=categories;
-		g_LogTime=GetTickCount();
+		g_LogTime=std::chrono::steady_clock::now();
 		LogMessage(L"version=%x, PID=%d, TID=%d, Categories=%08x\r\n",GetWinVersion(),GetCurrentProcessId(),GetCurrentThreadId(),categories);
 	}
 }
@@ -38,7 +41,7 @@ void LogMessage( const wchar_t *text, ... )
 	if (!g_LogFile) return;
 
 	wchar_t buf[2048];
-	int len=Sprintf(buf,_countof(buf),L"%8d: ",GetTickCount()-g_LogTime);
+	int len=Sprintf(buf,_countof(buf),L"%8d: ",std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-g_LogTime).count());
 	fwrite(buf,2,len,g_LogFile);
 
 	va_list args;
@@ -50,4 +53,32 @@ void LogMessage( const wchar_t *text, ... )
 	fwrite(L"\r\n",2,2,g_LogFile);
 
 	fflush(g_LogFile);
+}
+
+void LogPropertyStore(TLogCategory category, IPropertyStore* store)
+{
+	if (!store)
+		return;
+
+	DWORD count = 0;
+	store->GetCount(&count);
+	for (DWORD i = 0; i < count; i++)
+	{
+		PROPERTYKEY key{};
+		store->GetAt(i, &key);
+
+		PROPVARIANT val;
+		PropVariantInit(&val);
+
+		store->GetValue(key, &val);
+
+		CComString valueStr;
+		PropVariantToStringAlloc(val, &valueStr);
+		PropVariantClear(&val);
+
+		wchar_t guidStr[100]{};
+		StringFromGUID2(key.fmtid, guidStr, _countof(guidStr));
+
+		LOG_MENU(category, L"Property: {%s, %u} = %s", guidStr, key.pid, valueStr ? valueStr : L"???");
+	}
 }
