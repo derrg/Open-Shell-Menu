@@ -4348,6 +4348,9 @@ CSetting g_Settings[]={
 	{L"InvertMetroIcons",CSetting::TYPE_BOOL,IDS_INVERT_ICONS,IDS_INVERT_ICONS_TIP,0},
 	{L"MaxMainMenuWidth",CSetting::TYPE_INT,IDS_MENU_WIDTH,IDS_MENU_WIDTH_TIP,60,CSetting::FLAG_MENU_CLASSIC_BOTH},
 	{L"MaxMenuWidth",CSetting::TYPE_INT,IDS_SUBMENU_WIDTH,IDS_SUBMENU_WIDTH_TIP,60},
+	{L"AlignToWorkArea",CSetting::TYPE_BOOL,IDS_ALIGN_WORK_AREA,IDS_ALIGN_WORK_AREA_TIP,0},
+	{L"HorizontalMenuOffset",CSetting::TYPE_INT,IDS_HOR_OFFSET,IDS_HOR_OFFSET_TIP,0},
+	{L"VerticalMenuOffset",CSetting::TYPE_INT,IDS_VERT_OFFSET,IDS_VERT_OFFSET_TIP,0 },
 	{L"OverrideDPI",CSetting::TYPE_INT,IDS_DPI_OVERRIDE,IDS_DPI_OVERRIDE_TIP,0,CSetting::FLAG_COLD},
 	{L"MainMenuAnimate",CSetting::TYPE_BOOL,IDS_ANIMATION7,IDS_ANIMATION7_TIP,1,CSetting::FLAG_MENU_WIN7},
 	{L"MainMenuAnimation",CSetting::TYPE_INT,IDS_ANIMATION,IDS_ANIMATION_TIP,-1}, // system animation type
@@ -4413,7 +4416,7 @@ CSetting g_Settings[]={
 	{L"StartButtonIconSize",CSetting::TYPE_INT,IDS_BUTTON_ICON_SIZE,IDS_BUTTON_ICON_SIZE_TIP,0,0,L"#StartButtonType=1",L"ClasicButton"},
 	{L"StartButtonText",CSetting::TYPE_STRING,IDS_BUTTON_TEXT,IDS_BUTTON_TEXT_TIP,L"$Menu.Start",0,L"#StartButtonType=1",L"ClasicButton"},
 
-{L"Taskbar",CSetting::TYPE_GROUP,IDS_TASKBAR_SETTINGS},
+{L"Taskbar",CSetting::TYPE_GROUP,IDS_TASKBAR_SETTINGS,0,0,CSetting::FLAG_BASIC},
 	{L"CustomTaskbar",CSetting::TYPE_BOOL,IDS_TASK_CUSTOM,IDS_TASK_CUSTOM_TIP,0,CSetting::FLAG_CALLBACK},
 	{L"TaskbarLook",CSetting::TYPE_INT,IDS_TASK_LOOK,IDS_TASK_LOOK_TIP,1,CSetting::FLAG_CALLBACK,L"CustomTaskbar",L"CustomTaskbar"},
 		{L"Opaque",CSetting::TYPE_RADIO,IDS_TASK_OPAQUE,IDS_TASK_OPAQUE_TIP},
@@ -4656,11 +4659,19 @@ void UpdateSettings( void )
 	else if (dpi<96) dpi=96;
 	else if (dpi>480) dpi=480;
 
-	int iconSize=24;
-	if (dpi<=96)
-		iconSize=16;
-	else if (dpi<=120)
-		iconSize=20;
+	int iconSize=16;
+	if (dpi>=240)
+		iconSize=40;	// for 250% scaling
+	else if (dpi>=216)
+		iconSize=36;	// for 225% scaling
+	else if (dpi>=192)
+		iconSize=32;	// for 200% scaling
+	else if (dpi>=168)
+		iconSize=28;	// for 175% scaling
+	else if (dpi>=144)
+		iconSize=24;	// for 150% scaling
+	else if (dpi>=120)
+		iconSize=20;	// for 125% scaling
 	UpdateSetting(L"SmallIconSize",CComVariant(iconSize),false);
 	UpdateSetting(L"LargeIconSize",CComVariant(iconSize*2),false);
 

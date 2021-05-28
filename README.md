@@ -5,7 +5,7 @@
 [![GitHub Release](https://img.shields.io/github/release/Open-Shell/Open-Shell-Menu.svg)](https://github.com/Open-Shell/Open-Shell-Menu/releases) [![GitHub Pre-Release](https://img.shields.io/github/release/Open-Shell/Open-Shell-Menu/all.svg)](https://github.com/Open-Shell/Open-Shell-Menu/releases) [![Build status](https://ci.appveyor.com/api/projects/status/2wj5x5qoypfjj0tr/branch/master?svg=true)](https://ci.appveyor.com/project/passionate-coder/open-shell-menu/branch/master) [![GitQ](https://gitq.com/badge.svg)](https://gitq.com/passionate-coder/Classic-Start) [![Gitter chat](https://badges.gitter.im/gitterHQ/gitter.png)](https://gitter.im/open-shell/Lobby) [![Discord](https://img.shields.io/discord/757701054782636082?color=%4E5D94&label=Discord&logo=discord&logoColor=white)](https://discord.gg/7H6arr5)
 
 [Home Page](https://open-shell.github.io/Open-Shell-Menu)  
-[Discussion room](https://gitter.im/Open-Shell)  
+[Gitter Discussion room](https://gitter.im/Open-Shell)  
 [Latest nightly build](https://ci.appveyor.com/project/passionate-coder/open-shell-menu/branch/master/artifacts)  
 
 ### Features
@@ -30,4 +30,5 @@ If you just want to use it or looking for setup file, click here to download:
 
 [How To Skin a Start Menu](https://coddec.github.io/Classic-Shell/www.classicshell.net/tutorials/skintutorial.html)  
 [Classic Shell - Custom Start Buttons](https://coddec.github.io/Classic-Shell/www.classicshell.net/tutorials/buttontutorial.html)  
+[Questions? Ask on the Discussions section](https://github.com/Open-Shell/Open-Shell-Menu/discussions) or on [Discord](https://discord.gg/7H6arr5)  
 [Report a bug/issue or submit a feature request](https://github.com/Open-Shell/Open-Shell-Menu/issues)
